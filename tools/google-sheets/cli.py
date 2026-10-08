@@ -50,10 +50,34 @@ def build_parser() -> argparse.ArgumentParser:
     ls = subparsers.add_parser("list", aliases=["ls"], help="Показать список листов.")
     ls.add_argument("spreadsheet")
 
-    read = subparsers.add_parser("read", help="Прочитать первые строки листа.")
+    read = subparsers.add_parser("read", help="Быстро прочитать первые строки листа.")
     read.add_argument("spreadsheet")
     read.add_argument("--worksheet")
     read.add_argument("--limit", type=int, default=5)
+    read.add_argument("--start-row", type=int, default=1)
+    read.add_argument("--max-columns", type=int, default=26)
+
+    read_range = subparsers.add_parser("read-range", help="Прочитать конкретный диапазон A1.")
+    read_range.add_argument("spreadsheet")
+    read_range.add_argument("--worksheet")
+    read_range.add_argument("--range", required=True, dest="range_name")
+
+    export_csv = subparsers.add_parser(
+        "export-csv",
+        help="Прочитать лист батчами и сохранить строки в CSV.",
+    )
+    export_csv.add_argument("spreadsheet")
+    export_csv.add_argument("--worksheet")
+    export_csv.add_argument("--output", required=True)
+    export_csv.add_argument("--batch-size", type=int, default=5000)
+    export_csv.add_argument("--start-row", type=int, default=1)
+    export_csv.add_argument("--max-rows", type=int)
+    export_csv.add_argument("--max-columns", type=int)
+    export_csv.add_argument(
+        "--include-empty-rows",
+        action="store_true",
+        help="Не пропускать полностью пустые строки при экспорте.",
+    )
 
     write = subparsers.add_parser("write-csv", help="Записать CSV-файл в лист.")
     write.add_argument("spreadsheet")
@@ -103,6 +127,25 @@ def main() -> int:
             args.spreadsheet,
             worksheet=args.worksheet,
             limit=args.limit,
+            start_row=args.start_row,
+            max_columns=args.max_columns,
+        )
+    elif args.command == "read-range":
+        result = tool.read_range(
+            args.spreadsheet,
+            worksheet=args.worksheet,
+            range_name=args.range_name,
+        )
+    elif args.command == "export-csv":
+        result = tool.export_csv_by_batches(
+            args.spreadsheet,
+            worksheet=args.worksheet,
+            output=args.output,
+            batch_size=args.batch_size,
+            start_row=args.start_row,
+            max_rows=args.max_rows,
+            max_columns=args.max_columns,
+            include_empty_rows=args.include_empty_rows,
         )
     elif args.command == "write-csv":
         result = tool.write_rows(

@@ -4,7 +4,8 @@
 работать с Google Sheets через Google Service Account.
 
 Сейчас в репозитории есть CLI-инструмент для Google Таблиц. Он умеет создавать
-таблицы, читать первые строки, записывать CSV, управлять листами и удалять
+таблицы, быстро проверять доступ по первым строкам, читать диапазоны, выгружать
+листы в CSV батчами, записывать CSV чанками, управлять листами и удалять
 таблицы через Google Drive API.
 
 ## Что внутри
@@ -101,10 +102,27 @@ python tools/google-sheets/cli.py create --title "Agent report"
 python tools/google-sheets/cli.py list "<SPREADSHEET_URL_OR_ID>"
 ```
 
-Прочитать первые 5 строк:
+Быстро проверить доступ и прочитать первые 5 строк:
 
 ```bash
 python tools/google-sheets/cli.py read "<SPREADSHEET_URL_OR_ID>" --limit 5
+```
+
+Прочитать конкретный диапазон:
+
+```bash
+python tools/google-sheets/cli.py read-range "<SPREADSHEET_URL_OR_ID>" \
+  --worksheet "Report" \
+  --range "A1:F100"
+```
+
+Выгрузить большой лист в CSV батчами:
+
+```bash
+python tools/google-sheets/cli.py export-csv "<SPREADSHEET_URL_OR_ID>" \
+  --worksheet "Report" \
+  --output data/report.csv \
+  --batch-size 5000
 ```
 
 Записать CSV в лист:

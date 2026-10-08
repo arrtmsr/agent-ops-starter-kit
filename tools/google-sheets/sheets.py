@@ -9,7 +9,9 @@ from __future__ import annotations
 import random
 import re
 import time
+import csv
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable
 
 try:
@@ -21,6 +23,7 @@ except ImportError:  # Allows running cli.py as a direct script from google-shee
 
 DEFAULT_CHUNK_SIZE = 5000
 MAX_RETRIES = 3
+DEFAULT_READ_COLUMN_LIMIT = 26
 
 
 def extract_spreadsheet_id(value: str) -> str:
@@ -44,11 +47,20 @@ def _column_letter(index: int) -> str:
     return result
 
 
+def _range_for_rows(start_row: int, end_row: int, col_count: int) -> str:
+    last_column = _column_letter(max(col_count, 1))
+    return f"A{start_row}:{last_column}{end_row}"
+
+
 def _normalize_rows(rows: Iterable[Iterable[Any]]) -> list[list[Any]]:
     normalized = []
     for row in rows:
         normalized.append(["" if value is None else value for value in row])
     return normalized
+
+
+def _row_has_value(row: Iterable[Any]) -> bool:
+    return any(str(value).strip() for value in row)
 
 
 @dataclass
@@ -148,15 +160,116 @@ class GoogleSheetsTool:
         *,
         worksheet: str | None = None,
         limit: int = 5,
+        start_row: int = 1,
+        max_columns: int = DEFAULT_READ_COLUMN_LIMIT,
     ) -> dict[str, Any]:
         sheet = self.open_spreadsheet(spreadsheet)
         ws = sheet.worksheet(worksheet) if worksheet else sheet.get_worksheet(0)
-        values = ws.get_all_values()
+        end_row = max(start_row, start_row + max(limit, 1) - 1)
+        range_name = _range_for_rows(start_row, end_row, max_columns)
+        values = ws.get(range_name)
         return {
             "spreadsheet_id": extract_spreadsheet_id(spreadsheet),
             "worksheet": ws.title,
-            "rows_returned": min(limit, len(values)),
-            "rows": values[:limit],
+            "range": range_name,
+            "rows_returned": len(values),
+            "rows": values,
+        }
+
+    def read_range(
+        self,
+        spreadsheet: str,
+        *,
+        worksheet: str | None = None,
+        range_name: str,
+    ) -> dict[str, Any]:
+        sheet = self.open_spreadsheet(spreadsheet)
+        ws = sheet.worksheet(worksheet) if worksheet else sheet.get_worksheet(0)
+        values = ws.get(range_name)
+        return {
+            "spreadsheet_id": extract_spreadsheet_id(spreadsheet),
+            "worksheet": ws.title,
+            "range": range_name,
+            "rows_returned": len(values),
+            "rows": values,
+        }
+
+    def iter_rows_by_batches(
+        self,
+        spreadsheet: str,
+        *,
+        worksheet: str | None = None,
+        batch_size: int = DEFAULT_CHUNK_SIZE,
+        start_row: int = 1,
+        max_rows: int | None = None,
+        max_columns: int | None = None,
+        include_empty_rows: bool = False,
+    ):
+        """Читать лист пачками строк, чтобы не тянуть весь лист одним запросом."""
+        sheet = self.open_spreadsheet(spreadsheet)
+        ws = sheet.worksheet(worksheet) if worksheet else sheet.get_worksheet(0)
+        col_count = max_columns or ws.col_count or DEFAULT_READ_COLUMN_LIMIT
+        last_row = ws.row_count
+        if max_rows is not None:
+            last_row = min(last_row, start_row + max_rows - 1)
+
+        current_row = start_row
+        while current_row <= last_row:
+            end_row = min(current_row + batch_size - 1, last_row)
+            range_name = _range_for_rows(current_row, end_row, col_count)
+            values = ws.get(range_name)
+            if not include_empty_rows:
+                values = [row for row in values if _row_has_value(row)]
+            if values:
+                yield {
+                    "worksheet": ws.title,
+                    "range": range_name,
+                    "start_row": current_row,
+                    "end_row": end_row,
+                    "rows": values,
+                }
+            current_row = end_row + 1
+
+    def export_csv_by_batches(
+        self,
+        spreadsheet: str,
+        *,
+        output: str | Path,
+        worksheet: str | None = None,
+        batch_size: int = DEFAULT_CHUNK_SIZE,
+        start_row: int = 1,
+        max_rows: int | None = None,
+        max_columns: int | None = None,
+        include_empty_rows: bool = False,
+    ) -> dict[str, Any]:
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        batches_read = 0
+        rows_written = 0
+        worksheet_title = worksheet or ""
+        with output_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            for batch in self.iter_rows_by_batches(
+                spreadsheet,
+                worksheet=worksheet,
+                batch_size=batch_size,
+                start_row=start_row,
+                max_rows=max_rows,
+                max_columns=max_columns,
+                include_empty_rows=include_empty_rows,
+            ):
+                worksheet_title = batch["worksheet"]
+                writer.writerows(batch["rows"])
+                batches_read += 1
+                rows_written += len(batch["rows"])
+
+        return {
+            "spreadsheet_id": extract_spreadsheet_id(spreadsheet),
+            "worksheet": worksheet_title,
+            "output": str(output_path),
+            "rows_written": rows_written,
+            "batches_read": batches_read,
         }
 
     def write_rows(

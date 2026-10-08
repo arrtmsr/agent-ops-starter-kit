@@ -7,7 +7,9 @@ Google Таблицы через Google Service Account.
 форматирования. Это базовый tool, который делает ключевые операции:
 
 - открыть таблицу по ссылке или ID;
-- прочитать первые строки из листа;
+- быстро прочитать первые строки из листа для проверки доступа;
+- прочитать конкретный диапазон в A1-формате;
+- выгрузить большой лист в CSV батчами;
 - записать CSV в лист чанками;
 - создать новую Google Таблицу;
 - переименовать таблицу;
@@ -45,7 +47,8 @@ GOOGLE_SHEETS_CREDENTIALS=config/credentials/google/google-service-account.json
 
 ## Быстрая проверка
 
-Прочитать первые 5 строк из первого листа:
+Прочитать первые 5 строк из первого листа. Это проверка доступа, а не
+ограничение инструмента:
 
 ```bash
 python tools/google-sheets/cli.py read "https://docs.google.com/spreadsheets/d/<ID>/edit" --limit 5
@@ -56,6 +59,41 @@ python tools/google-sheets/cli.py read "https://docs.google.com/spreadsheets/d/<
 ```bash
 python tools/google-sheets/cli.py read "<SPREADSHEET_URL>" --worksheet "Report" --limit 5
 ```
+
+## Прочитать диапазон
+
+Если нужно забрать конкретный кусок листа, используйте A1-диапазон:
+
+```bash
+python tools/google-sheets/cli.py read-range "<SPREADSHEET_URL>" \
+  --worksheet "Report" \
+  --range "A1:F100"
+```
+
+## Выгрузить лист батчами
+
+Если данных много, не тяните весь лист одной операцией. Экспортируйте строки в
+CSV батчами:
+
+```bash
+python tools/google-sheets/cli.py export-csv "<SPREADSHEET_URL>" \
+  --worksheet "Report" \
+  --output data/report.csv \
+  --batch-size 5000
+```
+
+Можно ограничить объем чтения:
+
+```bash
+python tools/google-sheets/cli.py export-csv "<SPREADSHEET_URL>" \
+  --worksheet "Report" \
+  --output data/report-sample.csv \
+  --max-rows 1000 \
+  --max-columns 20
+```
+
+По умолчанию полностью пустые строки пропускаются. Если нужно сохранить их в
+CSV, добавьте `--include-empty-rows`.
 
 ## Записать CSV
 
